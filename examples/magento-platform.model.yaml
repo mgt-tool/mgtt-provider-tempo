@@ -6,9 +6,14 @@
 #   • span-level error rate — application errors caught in code, not just
 #     the HTTP 5xx envelope (error_rate_5m)
 #
-# Each component below is one customer-visible operation held to its own
-# latency budget. target_max is the breach threshold; p50/p95/p99 and
-# breach duration are derived from the same TraceQL query stream.
+# Each component below is a three-number contract per customer-visible
+# operation:
+#   • target_max                 — latency budget (e.g. 800ms)
+#   • target_max_error_rate      — error budget (e.g. 0.001 = 0.1% of spans)
+#   • breach_tolerance_seconds   — how long p99 may sit above target_max
+#                                  before the SLO is considered breached
+# The type manifest's `healthy:` and `states:` reference these vars, so
+# tightening or loosening any scenario means changing one number here.
 #
 # Usage:
 #   export MGTT_MODEL=examples/magento-platform.model.yaml
@@ -53,7 +58,8 @@ components:
   # mgtt walks downstream and asks each dependency what's wrong.
 
   # The most-walked page on the storefront. Slow here = revenue lost on
-  # everything that follows.
+  # everything that follows. Standard error budget; tolerate brief spikes
+  # since cache warm-ups produce normal short breaches.
   catalog_browse_slo:
     type: tracing.span_invariant
     providers: [tempo]
@@ -61,10 +67,12 @@ components:
       tempo_url: "{tempo_url}"
       span: "http.server.catalog_view"
       target_max: 2s
+      target_max_error_rate: 0.01           # 1% errors tolerated
+      breach_tolerance_seconds: 300         # 5 min sustained = breach
     depends_on: [php_fpm, opensearch, redis]
 
   # The "is the customer committing?" signal. Sub-second target — slower
-  # than this and abandonment climbs sharply.
+  # than this and abandonment climbs sharply. Tighter on errors than browse.
   add_to_cart_slo:
     type: tracing.span_invariant
     providers: [tempo]
@@ -72,10 +80,12 @@ components:
       tempo_url: "{tempo_url}"
       span: "cart.add"
       target_max: 500ms
+      target_max_error_rate: 0.005          # 0.5% errors
+      breach_tolerance_seconds: 60          # 1 min sustained
     depends_on: [php_fpm, rds, redis]
 
-  # The revenue gate. Breaches here are the ones to page on — every
-  # second of breach is conversion bleeding out.
+  # The revenue gate. Tightest budgets in the model — every second of
+  # breach is conversion bleeding out.
   checkout_init_slo:
     type: tracing.span_invariant
     providers: [tempo]
@@ -83,10 +93,13 @@ components:
       tempo_url: "{tempo_url}"
       span: "checkout.init"
       target_max: 800ms
+      target_max_error_rate: 0.001          # 0.1% errors
+      breach_tolerance_seconds: 30          # 30s sustained = page someone
     depends_on: [php_fpm, rds, redis]
 
-  # Discovery latency. Slow search ≠ broken search, but a sustained breach
-  # often points at OpenSearch under-provisioned for the catalog size.
+  # Discovery latency. Looser error budget — search timeouts on long-tail
+  # queries are normal — and longer breach tolerance since OpenSearch
+  # warm-up windows can produce minutes-long latency bumps.
   search_query_slo:
     type: tracing.span_invariant
     providers: [tempo]
@@ -94,4 +107,6 @@ components:
       tempo_url: "{tempo_url}"
       span: "catalog.search"
       target_max: 1s
+      target_max_error_rate: 0.02           # 2% errors
+      breach_tolerance_seconds: 600         # 10 min sustained
     depends_on: [php_fpm, opensearch]
