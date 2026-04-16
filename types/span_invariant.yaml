@@ -49,18 +49,18 @@ facts:
       cost: medium
 
 healthy:
-  - error_rate_5m < 0.01
-  - breach_duration == 0
+  - error_rate_5m < target_max_error_rate
+  - breach_duration <= breach_tolerance_seconds
 
 states:
   breached:
-    when: "breach_duration > 0"
-    description: p99 has been over target_max long enough to count as a breach
+    when: "breach_duration > breach_tolerance_seconds"
+    description: p99 has been over target_max longer than breach_tolerance_seconds
   degrading:
-    when: "error_rate_5m >= 0.01"
-    description: error rate above 1%
+    when: "error_rate_5m >= target_max_error_rate"
+    description: error rate above the configured ceiling
   live:
-    when: "breach_duration == 0 & error_rate_5m < 0.01"
+    when: "breach_duration <= breach_tolerance_seconds & error_rate_5m < target_max_error_rate"
     description: SLO holding
 
 default_active_state: live
