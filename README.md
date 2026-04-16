@@ -47,54 +47,54 @@ States: `live` (healthy) → `degrading` (error rate ≥ 1%) → `breached` (p99
 
 ## Emitting spans to Tempo
 
-Tempo only knows about spans you send it. The probe queries match by **span name verbatim** — your `span: "checkout.init"` in the model has to match what your code emits.
+**Any OpenTelemetry-instrumented service works** — Go, Java, .NET, Python, Node, Rust, PHP, Ruby, anything that speaks OTLP. The provider doesn't care about the language; it queries Tempo for the spans you sent.
 
-### From PHP / Magento
+### The contract
 
-Drop the OpenTelemetry PHP SDK into the php-fpm container. Bootstrap (`pub/index.php` or a Magento module init):
+Tempo's metrics endpoint matches spans by **exact span name** plus optional attribute filters. Three things must be true:
 
-```php
-use OpenTelemetry\SDK\Trace\TracerProvider;
-use OpenTelemetry\SDK\Trace\SpanProcessor\BatchSpanProcessor;
-use OpenTelemetry\Contrib\Otlp\SpanExporter;
-use OpenTelemetry\SDK\Common\Export\Http\PsrTransportFactory;
+1. **Span name in the model matches the emitted name verbatim.** `span: "checkout.init"` in YAML must equal what your tracer's `startSpan("checkout.init")` (or equivalent) produces.
+2. **Status is set on errors.** `status=error` is what `error_rate_5m` counts. Most OTEL SDKs do this automatically when you call `setStatus(StatusCode.ERROR)` or when a span exits via an exception handler.
+3. **Spans actually arrive.** Set `OTEL_EXPORTER_OTLP_ENDPOINT` to your collector (or directly to Tempo's OTLP receiver, port 4318), and `OTEL_SERVICE_NAME` so spans are attributable.
 
-$transport = (new PsrTransportFactory())
-    ->create(getenv('OTEL_EXPORTER_OTLP_ENDPOINT') . '/v1/traces', 'application/x-protobuf');
+That's the whole contract. Everything below is a getting-started snippet for one popular language; the OTEL doc for *your* language has the canonical bootstrap.
 
-$provider = TracerProvider::builder()
-    ->addSpanProcessor(new BatchSpanProcessor(new SpanExporter($transport)))
-    ->build();
+### One-time service setup (any language)
 
-$tracer = $provider->getTracer('magento');
-```
-
-Container env vars:
+Set these env vars on the container/process emitting spans:
 
 ```
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc:4318
-OTEL_SERVICE_NAME=magento-php-fpm
+OTEL_SERVICE_NAME=<your-service-name>
 OTEL_RESOURCE_ATTRIBUTES=deployment.color=blue,service.version=2.4.7-p3
 ```
 
-In your business code:
+Then add the OTEL SDK + OTLP/HTTP exporter for your language. Per-language bootstrap docs:
 
-```php
-$span = $tracer->spanBuilder('checkout.init')->startSpan();
-try {
-    // ... checkout init logic
-} finally {
-    $span->end();
-}
+| Language | OTEL bootstrap doc |
+|---|---|
+| Go | [opentelemetry.io/docs/languages/go](https://opentelemetry.io/docs/languages/go/) |
+| Java | [opentelemetry.io/docs/languages/java](https://opentelemetry.io/docs/languages/java/) |
+| Python | [opentelemetry.io/docs/languages/python](https://opentelemetry.io/docs/languages/python/) |
+| Node.js / JS | [opentelemetry.io/docs/languages/js](https://opentelemetry.io/docs/languages/js/) |
+| .NET | [opentelemetry.io/docs/languages/net](https://opentelemetry.io/docs/languages/net/) |
+| PHP | [opentelemetry.io/docs/languages/php](https://opentelemetry.io/docs/languages/php/) |
+| Rust | [opentelemetry.io/docs/languages/rust](https://opentelemetry.io/docs/languages/rust/) |
+| Ruby | [opentelemetry.io/docs/languages/ruby](https://opentelemetry.io/docs/languages/ruby/) |
+
+### Naming a span (one example — Go)
+
+```go
+ctx, span := tracer.Start(ctx, "checkout.init")
+defer span.End()
+// ... business logic
 ```
 
-### From Go / Node / Python
-
-Use the official OTEL SDK for the language plus the OTLP/HTTP exporter pointed at your collector. The exact same span name + attributes pattern applies.
+Equivalent in Java: `tracer.spanBuilder("checkout.init").startSpan()`. In Python: `tracer.start_as_current_span("checkout.init")`. In PHP: `$tracer->spanBuilder('checkout.init')->startSpan()`. The SDK shape varies; the **span name** is the one thing the provider's TraceQL query joins on.
 
 ### Verify spans arrive
 
-Before wiring the model, hit Tempo directly:
+Before wiring the model, hit Tempo directly with the same query the provider would send:
 
 ```bash
 curl 'http://tempo:3200/api/metrics/query_range' \
@@ -104,7 +104,7 @@ curl 'http://tempo:3200/api/metrics/query_range' \
   --data-urlencode 'step=30s'
 ```
 
-If the result is empty, the spans aren't reaching Tempo. Common causes: collector endpoint wrong, `OTEL_SERVICE_NAME` unset, span name has unexpected characters.
+Empty result → spans aren't reaching Tempo. Common causes: collector endpoint wrong, `OTEL_SERVICE_NAME` unset, span name typo.
 
 ## Example model
 
