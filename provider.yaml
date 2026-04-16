@@ -1,0 +1,32 @@
+meta:
+  name: tempo
+  version: 0.1.0
+  description: Per-span SLO checks against Grafana Tempo. Use for "p99 of <span> stays under <target>" invariants.
+  tags: [tracing, otel, grafana, slo]
+  requires:
+    mgtt: ">=0.1.4"
+  command: "$MGTT_PROVIDER_DIR/bin/mgtt-provider-tempo"
+
+hooks:
+  install: hooks/install.sh
+  uninstall: hooks/uninstall.sh
+
+variables:
+  tempo_url:
+    description: base URL of the Tempo HTTP API (e.g. https://tempo.observability.svc:3200)
+    required: true
+  auth_token:
+    description: bearer token for Tempo when fronted by auth (optional)
+    required: false
+  tenant_id:
+    description: X-Scope-OrgID for multi-tenant Tempo deployments (optional)
+    required: false
+
+auth:
+  strategy: environment
+  reads_from:
+    - tempo_url variable (model-side)
+    - auth_token variable (model-side; pass via secret)
+  access:
+    probes: tempo HTTP read
+    writes: none

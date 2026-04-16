@@ -1,0 +1,72 @@
+facts:
+  current_p99:
+    type: mgtt.float
+    ttl: 30s
+    description: "p99 duration of <span> over the last 5 minutes, in milliseconds"
+    probe:
+      cmd: "tempo-cli query histogram --span '{span}' --window 5m --percentile 99"
+      parse: float
+      cost: medium
+  current_p95:
+    type: mgtt.float
+    ttl: 30s
+    description: "p95 duration in milliseconds"
+    probe:
+      cmd: "tempo-cli query histogram --span '{span}' --window 5m --percentile 95"
+      parse: float
+      cost: medium
+  current_p50:
+    type: mgtt.float
+    ttl: 30s
+    description: "p50 duration in milliseconds"
+    probe:
+      cmd: "tempo-cli query histogram --span '{span}' --window 5m --percentile 50"
+      parse: float
+      cost: medium
+  request_count_5m:
+    type: mgtt.int
+    ttl: 30s
+    description: "total spans matching {span} observed in the last 5 minutes — denominator context for the percentiles"
+    probe:
+      cmd: "tempo-cli query count --span '{span}' --window 5m"
+      parse: int
+      cost: low
+  error_rate_5m:
+    type: mgtt.float
+    ttl: 30s
+    description: "fraction of spans matching {span} with status=error in the last 5 minutes (0.0–1.0)"
+    probe:
+      cmd: "tempo-cli query error-rate --span '{span}' --window 5m"
+      parse: float
+      cost: medium
+  breach_duration:
+    type: mgtt.int
+    ttl: 60s
+    description: "seconds the p99 has continuously exceeded target_max; 0 when not breached"
+    probe:
+      cmd: "tempo-cli query breach-duration --span '{span}' --threshold {target_max}"
+      parse: int
+      cost: medium
+
+healthy:
+  - error_rate_5m < 0.01
+  - breach_duration == 0
+
+states:
+  breached:
+    when: "breach_duration > 0"
+    description: p99 has been over target_max long enough to count as a breach
+  degrading:
+    when: "error_rate_5m >= 0.01"
+    description: error rate above 1%
+  live:
+    when: "breach_duration == 0 & error_rate_5m < 0.01"
+    description: SLO holding
+
+default_active_state: live
+
+failure_modes:
+  breached:
+    can_cause: [upstream_failure, slo_violation]
+  degrading:
+    can_cause: [upstream_failure, 5xx_errors]
