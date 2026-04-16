@@ -31,11 +31,15 @@ func TestQueryRangeMetrics_HappyPath(t *testing.T) {
 	c := New("http://tempo:3200", "", "")
 	c.Do = fakeRT{
 		status: 200,
-		body: `{"status":"success","data":{"resultType":"matrix","result":[
-			{"metric":{},"values":[[1700000000,"1500000"],[1700000030,"1700000"]]}
-		]}}`,
+		body: `{"series":[{"labels":[{"key":"__name__","value":{"stringValue":"quantile_over_time"}}],
+			"samples":[
+				{"timestampMs":"1700000000000","value":1500000},
+				{"timestampMs":"1700000030000","value":1700000}
+			],
+			"promLabels":"{__name__=\"quantile_over_time\"}"
+		}]}`,
 	}.do
-	res, err := c.QueryRangeMetrics(t.Context(), `{ name = "x" } | quantile_over_time(.99, duration)`, 5*60)
+	res, err := c.QueryRangeMetrics(t.Context(), `{ name = "x" } | quantile_over_time(duration, 0.99)`, 5*60)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,13 +98,31 @@ func TestQueryRangeMetrics_BadJSON(t *testing.T) {
 }
 
 func TestSumLatest(t *testing.T) {
-	r := &MetricsResponse{}
-	r.Data.Result = []SeriesResult{
-		{Values: [][]any{{1.0, "10"}, {2.0, "12"}}},
-		{Values: [][]any{{1.0, "5"}, {2.0, "8"}}},
+	r := &MetricsResponse{
+		Series: []SeriesResult{
+			{Samples: []Sample{{TimestampMs: "1", Value: 10}, {TimestampMs: "2", Value: 12}}},
+			{Samples: []Sample{{TimestampMs: "1", Value: 5}, {TimestampMs: "2", Value: 8}}},
+		},
 	}
 	if got := r.SumLatest(); got != 20 {
 		t.Fatalf("want 20 (12+8), got %v", got)
+	}
+}
+
+// TestSamples_OmittedValueDecodesAsZero — Tempo omits the `value` field when
+// a sample bucket had zero hits; ensure JSON-decode treats absent value as 0.
+func TestSamples_OmittedValueDecodesAsZero(t *testing.T) {
+	c := New("http://tempo:3200", "", "")
+	c.Do = fakeRT{
+		status: 200,
+		body:   `{"series":[{"samples":[{"timestampMs":"1700000000000"},{"timestampMs":"1700000030000","value":42}]}]}`,
+	}.do
+	res, err := c.QueryRangeMetrics(t.Context(), "{}", 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := res.LatestValue(); !ok || v != 42 {
+		t.Fatalf("want 42 (latest non-zero), got %v ok=%v", v, ok)
 	}
 }
 

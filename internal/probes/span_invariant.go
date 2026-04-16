@@ -3,6 +3,7 @@ package probes
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mgt-tool/mgtt-provider-tempo/internal/tempoclient"
@@ -26,7 +27,7 @@ func registerSpanInvariant(r *provider.Registry) {
 			if err != nil {
 				return provider.Result{}, err
 			}
-			q := fmt.Sprintf(`{ name = %q } | count_over_time()`, span)
+			q := fmt.Sprintf(`%s | count_over_time()`, matcherBlock(span, req.Extra["span_filter"], ""))
 			res, err := tf.QueryRangeMetrics(ctx, q, window5m)
 			if err != nil {
 				return provider.Result{}, err
@@ -39,9 +40,9 @@ func registerSpanInvariant(r *provider.Registry) {
 			if err != nil {
 				return provider.Result{}, err
 			}
-			// Two queries: error count and total count. Ratio = error rate.
-			errQ := fmt.Sprintf(`{ name = %q && status = error } | count_over_time()`, span)
-			totalQ := fmt.Sprintf(`{ name = %q } | count_over_time()`, span)
+			filter := req.Extra["span_filter"]
+			errQ := fmt.Sprintf(`%s | count_over_time()`, matcherBlock(span, filter, "status = error"))
+			totalQ := fmt.Sprintf(`%s | count_over_time()`, matcherBlock(span, filter, ""))
 			errRes, err := tf.QueryRangeMetrics(ctx, errQ, window5m)
 			if err != nil {
 				return provider.Result{}, err
@@ -71,9 +72,8 @@ func registerSpanInvariant(r *provider.Registry) {
 				return provider.Result{}, fmt.Errorf("%w: target_max %q is not a duration: %v",
 					provider.ErrUsage, targetRaw, err)
 			}
-			// Query p99 over a longer window split by 30s steps; count
-			// how many trailing steps remain over the target.
-			q := fmt.Sprintf(`{ name = %q } | quantile_over_time(.99, duration)`, span)
+			q := fmt.Sprintf(`%s | quantile_over_time(duration, 0.99)`,
+				matcherBlock(span, req.Extra["span_filter"], ""))
 			res, err := tf.QueryRangeMetrics(ctx, q, 30*time.Minute)
 			if err != nil {
 				return provider.Result{}, err
@@ -91,7 +91,8 @@ func percentile(p int) provider.ProbeFn {
 		if err != nil {
 			return provider.Result{}, err
 		}
-		q := fmt.Sprintf(`{ name = %q } | quantile_over_time(.%02d, duration)`, span, p)
+		q := fmt.Sprintf(`%s | quantile_over_time(duration, 0.%02d)`,
+			matcherBlock(span, req.Extra["span_filter"], ""), p)
 		res, err := tf.QueryRangeMetrics(ctx, q, window5m)
 		if err != nil {
 			return provider.Result{}, err
@@ -100,10 +101,27 @@ func percentile(p int) provider.ProbeFn {
 		if !ok {
 			return provider.FloatResult(0), nil
 		}
-		// Tempo returns durations in nanoseconds; convert to milliseconds
-		// for an operator-friendly comparison value.
 		return provider.FloatResult(v / 1e6), nil
 	}
+}
+
+// matcherBlock builds a TraceQL `{ ... }` block from a span name plus
+// optional caller-supplied attribute filter and optional extra clause
+// (used for the per-status sub-query in error_rate_5m). Clauses are joined
+// with `&&`. Examples:
+//
+//	matcherBlock("checkout.init", "", "")                              → { name = "checkout.init" }
+//	matcherBlock("checkout.init", "", "status = error")                → { name = "checkout.init" && status = error }
+//	matcherBlock("checkout.init", `resource.color = "green"`, "")      → { name = "checkout.init" && resource.color = "green" }
+func matcherBlock(name, filter, extra string) string {
+	parts := []string{fmt.Sprintf("name = %q", name)}
+	if filter = strings.TrimSpace(filter); filter != "" {
+		parts = append(parts, filter)
+	}
+	if extra = strings.TrimSpace(extra); extra != "" {
+		parts = append(parts, extra)
+	}
+	return "{ " + strings.Join(parts, " && ") + " }"
 }
 
 // setup pulls the required extras and constructs the client. Returns the
@@ -124,25 +142,13 @@ func setup(req provider.Request) (*tempoclient.Client, string, error) {
 // counts how many consecutive trailing samples exceed the threshold (in ns).
 // Returns the duration in seconds.
 func trailingBreachSeconds(res *tempoclient.MetricsResponse, thresholdNs float64) int {
-	if len(res.Data.Result) == 0 || len(res.Data.Result[0].Values) == 0 {
+	if len(res.Series) == 0 || len(res.Series[0].Samples) == 0 {
 		return 0
 	}
-	values := res.Data.Result[0].Values
+	samples := res.Series[0].Samples
 	count := 0
-	for i := len(values) - 1; i >= 0; i-- {
-		v := values[i]
-		if len(v) < 2 {
-			break
-		}
-		str, ok := v[1].(string)
-		if !ok {
-			break
-		}
-		var f float64
-		if _, err := fmt.Sscanf(str, "%f", &f); err != nil {
-			break
-		}
-		if f <= thresholdNs {
+	for i := len(samples) - 1; i >= 0; i-- {
+		if samples[i].Value <= thresholdNs {
 			break
 		}
 		count++
