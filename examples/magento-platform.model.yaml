@@ -1,0 +1,76 @@
+# A real Magento storefront — four customer-facing transactions wired up as
+# Tempo SLOs alongside the kubernetes infrastructure they depend on.
+#
+# Usage:
+#   export MGTT_MODEL=examples/magento-platform.model.yaml
+#   mgtt plan --component checkout_init_slo
+
+meta:
+  name: magento-storefront
+  version: "1.0"
+  providers:
+    - kubernetes
+    - aws
+    - tempo
+  vars:
+    namespace: magento
+    tempo_url: http://tempo.observability.svc:3200
+    color: blue
+
+components:
+  # ── Infrastructure ─────────────────────────────────────────────────────
+  php_fpm:
+    type: kubernetes.deployment
+    vars: {name: magento-php-fpm-blue}
+
+  rds:
+    type: aws.rds_instance
+    providers: [aws]
+    vars: {identifier: magento-prod}
+
+  redis:
+    type: aws.elasticache_cluster
+    providers: [aws]
+    vars: {identifier: magento-redis}
+
+  opensearch:
+    type: aws.opensearch_domain
+    providers: [aws]
+    vars: {identifier: magento-search}
+
+  # ── Per-span SLOs ──────────────────────────────────────────────────────
+  catalog_browse_slo:
+    type: tracing.span_invariant
+    providers: [tempo]
+    vars:
+      tempo_url: "{tempo_url}"
+      span: "http.server.catalog_view"
+      target_max: 2s
+    depends_on: [php_fpm, opensearch, redis]
+
+  add_to_cart_slo:
+    type: tracing.span_invariant
+    providers: [tempo]
+    vars:
+      tempo_url: "{tempo_url}"
+      span: "cart.add"
+      target_max: 500ms
+    depends_on: [php_fpm, rds, redis]
+
+  checkout_init_slo:
+    type: tracing.span_invariant
+    providers: [tempo]
+    vars:
+      tempo_url: "{tempo_url}"
+      span: "checkout.init"
+      target_max: 800ms
+    depends_on: [php_fpm, rds, redis]
+
+  search_query_slo:
+    type: tracing.span_invariant
+    providers: [tempo]
+    vars:
+      tempo_url: "{tempo_url}"
+      span: "catalog.search"
+      target_max: 1s
+    depends_on: [php_fpm, opensearch]

@@ -1,0 +1,40 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+mgtt-provider-tempo
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+*.prof
+coverage.txt
+
+# Vendored deps
+vendor/
+
+# Workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+
+# Superpowers plans/specs (local only)
+docs/superpowers/
