@@ -117,9 +117,12 @@ curl 'http://tempo:3200/api/metrics/query_range' \
 
 Empty result → spans aren't reaching Tempo. Common causes: collector endpoint wrong, `OTEL_SERVICE_NAME` unset, span name typo.
 
-## Example model
+## Example models
 
-See [`examples/magento-platform.model.yaml`](./examples/magento-platform.model.yaml) — wires four `tracing.span_invariant` components against a real Magento checkout flow alongside `kubernetes.*` infra.
+Two examples, deliberately separate so each tells one story end-to-end:
+
+- [`examples/magento-platform.model.yaml`](./examples/magento-platform.model.yaml) — **steady-state SLOs.** Four customer-facing operations (catalog browse, add to cart, checkout init, search) each held to a three-number contract: latency budget, error budget, breach tolerance. Shows the everyday shape of `tracing.span_invariant`.
+- [`examples/magento-blue-green-canary.model.yaml`](./examples/magento-blue-green-canary.model.yaml) — **the deployment moment.** A canary SLO that uses `span_filter` to scope to the just-promoted color, depending on a `kubernetes.service` so a stuck switch surfaces from two angles. Shows multi-provider composition and the `span_filter` var.
 
 ## Architecture
 

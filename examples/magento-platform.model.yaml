@@ -37,13 +37,6 @@ components:
     type: kubernetes.deployment
     vars: {name: magento-php-fpm-blue}
 
-  # The Service whose selector flip *is* the blue/green promotion. The
-  # post_switch_canary SLO depends on this so a stuck switch surfaces both
-  # at the kubernetes layer and at the latency layer.
-  magento_svc:
-    type: kubernetes.service
-    vars: {name: magento-svc, namespace: "{namespace}"}
-
   rds:
     type: aws.rds_instance
     providers: [aws]
@@ -117,26 +110,3 @@ components:
       target_max_error_rate: 0.02           # 2% errors
       breach_tolerance_seconds: 600         # 10 min sustained
     depends_on: [php_fpm, opensearch]
-
-  # ── The deployment canary ──────────────────────────────────────────────
-  # The blue/green switch *is* the canary. After magento_svc flips its
-  # selector to {color}, the just-promoted color must hold a tighter error
-  # budget than steady-state — otherwise the deploy is bad and rollback is
-  # the right move. span_filter scopes this SLO to one color so the dying
-  # blue pods don't contaminate the signal.
-  #
-  # Latency budget is *looser* than steady-state checkout (3s vs 800ms) —
-  # a fresh fleet runs cold for a few minutes and that's expected. But the
-  # error budget is *tighter* (0.5% vs 0.1%) and breach tolerance is *zero*
-  # (any sustained breach in the canary window is a fail).
-  post_switch_canary:
-    type: tracing.span_invariant
-    providers: [tempo]
-    vars:
-      tempo_url: "{tempo_url}"
-      span: "http.server.request"
-      span_filter: 'resource.deployment.color = "{color}"'
-      target_max: 3s
-      target_max_error_rate: 0.005
-      breach_tolerance_seconds: 0
-    depends_on: [magento_svc, php_fpm]
