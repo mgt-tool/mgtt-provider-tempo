@@ -1,5 +1,10 @@
-# Single-binary Tempo config for integration tests. No clustering, no
-# auth, no S3 — just enough to ingest OTLP spans and serve TraceQL Metrics.
+# Single-binary Tempo 2.6 config for integration tests. Spans flow:
+#   OTLP/HTTP → distributor → ingester (storage) AND metrics_generator
+#                                       → local-blocks processor (TraceQL Metrics)
+#
+# The local-blocks processor is what makes /api/metrics/query_range return
+# real samples. flush_to_storage:true keeps queries returning data after the
+# in-memory window rolls.
 
 target: all
 multitenancy_enabled: false
@@ -18,7 +23,7 @@ distributor:
           endpoint: 0.0.0.0:4317
 
 ingester:
-  trace_idle_period: 1s    # flush quickly so probes see the spans
+  trace_idle_period: 1s
   max_block_duration: 5m
 
 compactor:
@@ -32,9 +37,10 @@ storage:
       path: /var/tempo/blocks
     wal:
       path: /var/tempo/wal
+    # Default is 5m — way too slow for tests. Poll every second so the
+    # querier sees freshly-flushed local-blocks immediately.
+    blocklist_poll: 1s
 
-# Enable the TraceQL Metrics endpoint (/api/metrics/query_range) — that's
-# what mgtt-provider-tempo queries.
 query_frontend:
   metrics:
     max_duration: 24h
@@ -46,5 +52,29 @@ metrics_generator:
   registry:
     external_labels:
       source: tempo
+      cluster: integration-test
   storage:
     path: /var/tempo/generator/wal
+    # local-blocks doesn't need remote_write itself, but the metrics_generator
+    # module won't fully come up without a valid storage target. Use a dummy
+    # URL — write attempts will fail but local-blocks queries still work.
+    remote_write:
+      - url: http://localhost:9999/api/v1/write
+        send_exemplars: true
+  traces_storage:
+    path: /var/tempo/generator/traces
+  processor:
+    local_blocks:
+      flush_to_storage: true
+      filter_server_spans: false
+      # Test-tuned: roll WAL into queryable blocks aggressively so probes
+      # see data within seconds, not minutes.
+      trace_idle_period: 1s
+      max_block_duration: 5s
+      flush_check_period: 1s
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics, local-blocks]
+      generate_native_histograms: both

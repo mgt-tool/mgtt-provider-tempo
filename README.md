@@ -14,6 +14,16 @@ checkout_init_p95:
 
 When `mgtt plan` walks this component, it asks Tempo: "what's the p99 of `checkout.init` right now, and how long has it been over 800ms?" — using the answer to drive root-cause reasoning.
 
+## Compatibility
+
+| | |
+|---|---|
+| **Backend** | Grafana Tempo |
+| **Versions** | `2.6.x` |
+| **Tested against** | `grafana/tempo:2.6.0` (digest pinned in integration tests) |
+
+Tempo's TraceQL Metrics response shape and TraceQL syntax both shifted between minor versions — earlier (`<2.6`) and later (`>=2.7`) deployments will silently return zeros or 4xx the queries. See [`provider.yaml`](./provider.yaml#L11) for the full contract.
+
 ## Install
 
 ```bash
@@ -27,6 +37,7 @@ mgtt provider install tempo
 | `tempo_url` | Base URL of the Tempo HTTP API | yes |
 | `auth_token` | Bearer token (when Tempo is fronted by auth) | no |
 | `tenant_id` | `X-Scope-OrgID` for multi-tenant Tempo | no |
+| `span_filter` | TraceQL attribute matcher appended to every query (e.g. `resource.deployment.color = "green"`) | no |
 
 Probes are HTTP `GET` only; the provider never writes to Tempo.
 

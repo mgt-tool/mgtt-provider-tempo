@@ -87,39 +87,55 @@ func (c *Client) QueryRangeMetrics(ctx context.Context, q string, since time.Dur
 	return &out, nil
 }
 
-// MetricsResponse mirrors Tempo's Prometheus-style response shape.
+// MetricsResponse mirrors Tempo 2.6+'s native query_range response shape:
+//
+//	{
+//	  "series": [
+//	    {
+//	      "labels":  [{"key":"__name__","value":{"stringValue":"count_over_time"}}, ...],
+//	      "samples": [{"timestampMs":"...","value":N}, ...],
+//	      "promLabels": "..."
+//	    }
+//	  ],
+//	  "metrics": {...}
+//	}
+//
+// `value` is omitted when zero — Go's JSON decoder leaves it 0, which is the
+// behavior we want.
 type MetricsResponse struct {
-	Status string `json:"status"`
-	Data   struct {
-		ResultType string         `json:"resultType"`
-		Result     []SeriesResult `json:"result"`
-	} `json:"data"`
+	Series []SeriesResult `json:"series"`
 }
 
 // SeriesResult is one labeled time series.
 type SeriesResult struct {
-	Metric map[string]string `json:"metric"`
-	Values [][]any           `json:"values"` // [[timestamp, "value"], ...]
+	Labels     []LabelPair `json:"labels"`
+	Samples    []Sample    `json:"samples"`
+	PromLabels string      `json:"promLabels"`
+}
+
+// LabelPair represents one label of a series.
+type LabelPair struct {
+	Key   string `json:"key"`
+	Value struct {
+		StringValue string `json:"stringValue"`
+	} `json:"value"`
+}
+
+// Sample is one (timestamp, value) point in a series. timestampMs comes back
+// as a JSON string in Tempo's response.
+type Sample struct {
+	TimestampMs string  `json:"timestampMs"`
+	Value       float64 `json:"value"`
 }
 
 // LatestValue returns the most recent value of the first matching series,
-// or (0, false) when there are no points. Tempo represents values as
-// strings; we parse to float64.
+// or (0, false) when there are no points.
 func (r *MetricsResponse) LatestValue() (float64, bool) {
-	for _, s := range r.Data.Result {
-		if len(s.Values) == 0 {
+	for _, s := range r.Series {
+		if len(s.Samples) == 0 {
 			continue
 		}
-		last := s.Values[len(s.Values)-1]
-		if len(last) < 2 {
-			continue
-		}
-		if str, ok := last[1].(string); ok {
-			var f float64
-			if _, err := fmt.Sscanf(str, "%f", &f); err == nil {
-				return f, true
-			}
-		}
+		return s.Samples[len(s.Samples)-1].Value, true
 	}
 	return 0, false
 }
@@ -128,20 +144,11 @@ func (r *MetricsResponse) LatestValue() (float64, bool) {
 // `rate` queries that may split by labels.
 func (r *MetricsResponse) SumLatest() float64 {
 	sum := 0.0
-	for _, s := range r.Data.Result {
-		if len(s.Values) == 0 {
+	for _, s := range r.Series {
+		if len(s.Samples) == 0 {
 			continue
 		}
-		last := s.Values[len(s.Values)-1]
-		if len(last) < 2 {
-			continue
-		}
-		if str, ok := last[1].(string); ok {
-			var f float64
-			if _, err := fmt.Sscanf(str, "%f", &f); err == nil {
-				sum += f
-			}
-		}
+		sum += s.Samples[len(s.Samples)-1].Value
 	}
 	return sum
 }

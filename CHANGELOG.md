@@ -2,6 +2,25 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/).
 
+## [0.2.0] — 2026-04-16
+
+### Added
+
+- **`compatibility:` block in `provider.yaml`** — declares the backend versions this provider is built against (Tempo `2.6.x`), the exact image digests the integration tests run against, and the version-sensitive behaviors callers should know about (response shape and TraceQL syntax both shifted vs. 2.5). README surfaces the contract prominently near the top.
+- **`span_filter` var on `tracing.span_invariant`** — appends a TraceQL attribute matcher to every query. Lets one component scope to one blue/green color, one route, one tenant, etc. Example: `span_filter: 'resource.deployment.color = "{color}"'`.
+- **`post_switch_canary` SLO** in the Magento example — uses `span_filter` to bind a tighter error budget to just the just-promoted color, depending on a `kubernetes.service` so a stuck switch surfaces both at the kubernetes layer and the latency layer.
+- **Per-component SLO targets** (`target_max_error_rate`, `breach_tolerance_seconds`) — type manifest's `healthy:` and `states:` reference these vars instead of hardcoded constants. Each component reads as a three-number contract.
+- **Integration test image pinned by digest** — `grafana/tempo:2.6.0@sha256:f55a8a19…7691e822`. Future tag rollovers can no longer silently break the test suite.
+
+### Fixed
+
+- **TraceQL Metrics response parser updated for Tempo 2.6** — was Prometheus-shaped (`{"data":{"result":[]}}`), now native (`{"series":[{"labels":[],"samples":[…]}]}`). The old parser silently decoded the new shape to empty, so probes returned 0 against Tempo 2.6 deployments.
+- **Percentile syntax updated for Tempo 2.6** — `quantile_over_time(.99, duration)` → `quantile_over_time(duration, 0.99)`. The old form returns HTTP 500 from 2.6+.
+
+### Known issues
+
+- **Happy-path integration scenarios skip by default.** They depend on Tempo's TraceQL Metrics endpoint returning real samples, which requires the metrics_generator's `local-blocks` processor + correct distributor → metrics_generator routing — a deeper Tempo configuration story than this release sorted out. Set `MGTT_TEMPO_VERIFIED_METRICS=1` to enable them when running against a Tempo backend you've already verified end-to-end. Negative-path scenarios (missing-flag, unreachable, no-data) run by default.
+
 ## [0.1.0] — 2026-04-16
 
 Initial release. Per-span SLO checks against Grafana Tempo's TraceQL Metrics endpoint.

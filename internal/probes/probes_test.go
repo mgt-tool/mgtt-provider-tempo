@@ -64,9 +64,7 @@ func extras(span string) map[string]string {
 
 func TestCurrentP99_ReturnsMillisecondsFromNanoseconds(t *testing.T) {
 	// 1.5 ms in ns = 1500000
-	body := `{"data":{"resultType":"matrix","result":[
-		{"metric":{},"values":[[1700000000,"1500000"]]}
-	]}}`
+	body := `{"series":[{"samples":[{"timestampMs":"1700000000000","value":1500000}]}]}`
 	fakeTempo(t, body, 200)
 
 	res := runProbe(t, "current_p99", extras("checkout.init"))
@@ -77,7 +75,7 @@ func TestCurrentP99_ReturnsMillisecondsFromNanoseconds(t *testing.T) {
 }
 
 func TestCurrentP99_NoData_ReturnsZero(t *testing.T) {
-	body := `{"data":{"resultType":"matrix","result":[]}}`
+	body := `{"series":[]}`
 	fakeTempo(t, body, 200)
 	res := runProbe(t, "current_p99", extras("checkout.init"))
 	if v, _ := res.Value.(float64); v != 0 {
@@ -86,10 +84,10 @@ func TestCurrentP99_NoData_ReturnsZero(t *testing.T) {
 }
 
 func TestRequestCount5m_SumsAcrossSeries(t *testing.T) {
-	body := `{"data":{"result":[
-		{"values":[[1,"10"]]},
-		{"values":[[1,"15"]]}
-	]}}`
+	body := `{"series":[
+		{"samples":[{"timestampMs":"1","value":10}]},
+		{"samples":[{"timestampMs":"1","value":15}]}
+	]}`
 	fakeTempo(t, body, 200)
 	res := runProbe(t, "request_count_5m", extras("checkout.init"))
 	if v, _ := res.Value.(int); v != 25 {
@@ -98,10 +96,8 @@ func TestRequestCount5m_SumsAcrossSeries(t *testing.T) {
 }
 
 func TestErrorRate5m_HappyPath(t *testing.T) {
-	// First call returns errors=2, second returns total=10.
-	// The fake serves the same body for both — fine for this assertion
-	// because we just need a valid ratio shape.
-	body := `{"data":{"result":[{"values":[[1,"5"]]}]}}`
+	// Fake serves the same body for both error and total queries; ratio = 1.0.
+	body := `{"series":[{"samples":[{"timestampMs":"1","value":5}]}]}`
 	fakeTempo(t, body, 200)
 	res := runProbe(t, "error_rate_5m", extras("checkout.init"))
 	if v, _ := res.Value.(float64); v != 1.0 {
@@ -110,7 +106,7 @@ func TestErrorRate5m_HappyPath(t *testing.T) {
 }
 
 func TestErrorRate5m_ZeroTotalReturnsZero(t *testing.T) {
-	body := `{"data":{"result":[]}}`
+	body := `{"series":[]}`
 	fakeTempo(t, body, 200)
 	res := runProbe(t, "error_rate_5m", extras("checkout.init"))
 	if v, _ := res.Value.(float64); v != 0 {
@@ -120,9 +116,11 @@ func TestErrorRate5m_ZeroTotalReturnsZero(t *testing.T) {
 
 func TestBreachDuration_NoBreach(t *testing.T) {
 	// All values well under 1s threshold (1e9 ns).
-	body := `{"data":{"result":[{"values":[
-		[1,"100000"],[2,"110000"],[3,"95000"]
-	]}]}}`
+	body := `{"series":[{"samples":[
+		{"timestampMs":"1","value":100000},
+		{"timestampMs":"2","value":110000},
+		{"timestampMs":"3","value":95000}
+	]}]}`
 	fakeTempo(t, body, 200)
 	res := runProbe(t, "breach_duration", extras("checkout.init"))
 	if v, _ := res.Value.(int); v != 0 {
@@ -132,9 +130,13 @@ func TestBreachDuration_NoBreach(t *testing.T) {
 
 func TestBreachDuration_TrailingBreach(t *testing.T) {
 	// Last 3 samples are over 1s (1e9 ns); 30s step → 90s breach.
-	body := `{"data":{"result":[{"values":[
-		[1,"100000"],[2,"110000"],[3,"1500000000"],[4,"1700000000"],[5,"2000000000"]
-	]}]}}`
+	body := `{"series":[{"samples":[
+		{"timestampMs":"1","value":100000},
+		{"timestampMs":"2","value":110000},
+		{"timestampMs":"3","value":1500000000},
+		{"timestampMs":"4","value":1700000000},
+		{"timestampMs":"5","value":2000000000}
+	]}]}`
 	fakeTempo(t, body, 200)
 	res := runProbe(t, "breach_duration", extras("checkout.init"))
 	if v, _ := res.Value.(int); v != 90 {
@@ -171,6 +173,55 @@ func TestBreachDuration_BadTargetMax_ErrUsage(t *testing.T) {
 	})
 	if !errors.Is(err, provider.ErrUsage) {
 		t.Fatalf("bad target_max must be ErrUsage, got %v", err)
+	}
+}
+
+func TestMatcherBlock(t *testing.T) {
+	cases := []struct {
+		name, filter, extra, want string
+	}{
+		{"checkout.init", "", "", `{ name = "checkout.init" }`},
+		{"checkout.init", "", "status = error", `{ name = "checkout.init" && status = error }`},
+		{"checkout.init", `resource.color = "green"`, "", `{ name = "checkout.init" && resource.color = "green" }`},
+		{"checkout.init", `resource.color = "green"`, "status = error", `{ name = "checkout.init" && resource.color = "green" && status = error }`},
+		{"checkout.init", "  ", "", `{ name = "checkout.init" }`}, // whitespace-only filter is dropped
+	}
+	for _, tc := range cases {
+		got := matcherBlock(tc.name, tc.filter, tc.extra)
+		if got != tc.want {
+			t.Errorf("matcherBlock(%q, %q, %q): got %q, want %q",
+				tc.name, tc.filter, tc.extra, got, tc.want)
+		}
+	}
+}
+
+// TestSpanFilter_PropagatesIntoQuery asserts the user-supplied span_filter
+// var lands inside the TraceQL `{ ... }` block sent to Tempo.
+func TestSpanFilter_PropagatesIntoQuery(t *testing.T) {
+	t.Helper()
+	prev := NewTempoConstructor
+	t.Cleanup(func() { NewTempoConstructor = prev })
+	var seenQuery string
+	NewTempoConstructor = func(_, _, _ string) *tempoclient.Client {
+		c := tempoclient.New("http://stub", "", "")
+		c.Do = func(req *http.Request) (*http.Response, error) {
+			seenQuery = req.URL.Query().Get("q")
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader(`{"series":[]}`)),
+			}, nil
+		}
+		return c
+	}
+	_ = runProbe(t, "current_p99", map[string]string{
+		"tempo_url":   "http://stub",
+		"span":        "http.server",
+		"target_max":  "1s",
+		"span_filter": `resource.deployment.color = "green"`,
+	})
+	wantSubstr := `resource.deployment.color = "green"`
+	if !strings.Contains(seenQuery, wantSubstr) {
+		t.Fatalf("expected query to contain %q, got %q", wantSubstr, seenQuery)
 	}
 }
 

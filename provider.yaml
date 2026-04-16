@@ -1,11 +1,25 @@
 meta:
   name: tempo
-  version: 0.1.0
+  version: 0.2.0
   description: Per-span SLO checks against Grafana Tempo. Use for "p99 of <span> stays under <target>" invariants.
   tags: [tracing, otel, grafana, slo]
   requires:
     mgtt: ">=0.1.4"
   command: "$MGTT_PROVIDER_DIR/bin/mgtt-provider-tempo"
+
+# Backend version this provider is built against. Tempo's TraceQL Metrics
+# response shape and TraceQL syntax both shifted between minor versions —
+# the contract here is a hard binding, not best-effort.
+compatibility:
+  backend: tempo
+  versions: ">=2.6.0,<2.7.0"
+  tested_against:
+    - "grafana/tempo:2.6.0@sha256:f55a8a1937fff0af3a760d376b476c8327fb30e432d5e7630d7938b67691e822"
+  notes: |
+    Tempo 2.6 introduced two breaking changes vs. 2.5:
+      • TraceQL Metrics response shape: {"data":{"result":[]}} → {"series":[...]}
+      • Percentile syntax: quantile_over_time(.99, duration) → quantile_over_time(duration, 0.99)
+    Older or newer Tempo deployments will silently return zeros or 4xx the queries.
 
 hooks:
   install: hooks/install.sh
@@ -20,6 +34,12 @@ variables:
     required: false
   tenant_id:
     description: X-Scope-OrgID for multi-tenant Tempo deployments (optional)
+    required: false
+  span_filter:
+    description: |
+      optional TraceQL attribute matcher appended to every query — e.g.
+      `resource.deployment.color = "green"` to scope an SLO to one
+      blue/green color, or `span.http.target = "/checkout"` to a single route
     required: false
 
 auth:
