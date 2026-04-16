@@ -1,4 +1,8 @@
 # A real Magento storefront, watched the way an SRE on call thinks about it.
+# The baseline model — held continuously, always loaded.
+#
+# Companion models:
+#   • magento-blue-green-canary.model.yaml — tighter contract during a deploy
 #
 # Two failure modes this provider catches that flat latency dashboards miss:
 #   • slowness that *persists* — distinguishing a 30-second blip from a
