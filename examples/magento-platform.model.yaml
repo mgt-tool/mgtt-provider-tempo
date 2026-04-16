@@ -1,5 +1,14 @@
-# A real Magento storefront — four customer-facing transactions wired up as
-# Tempo SLOs alongside the kubernetes infrastructure they depend on.
+# A real Magento storefront, watched the way an SRE on call thinks about it.
+#
+# Two failure modes this provider catches that flat latency dashboards miss:
+#   • slowness that *persists* — distinguishing a 30-second blip from a
+#     real degradation worth waking someone for (breach_duration)
+#   • span-level error rate — application errors caught in code, not just
+#     the HTTP 5xx envelope (error_rate_5m)
+#
+# Each component below is one customer-visible operation held to its own
+# latency budget. target_max is the breach threshold; p50/p95/p99 and
+# breach duration are derived from the same TraceQL query stream.
 #
 # Usage:
 #   export MGTT_MODEL=examples/magento-platform.model.yaml
@@ -18,7 +27,7 @@ meta:
     color: blue
 
 components:
-  # ── Infrastructure ─────────────────────────────────────────────────────
+  # ── The infrastructure these requests run through ──────────────────────
   php_fpm:
     type: kubernetes.deployment
     vars: {name: magento-php-fpm-blue}
@@ -38,7 +47,13 @@ components:
     providers: [aws]
     vars: {identifier: magento-search}
 
-  # ── Per-span SLOs ──────────────────────────────────────────────────────
+  # ── Per-customer-operation SLOs ────────────────────────────────────────
+  # One component per named span an operator cares about. depends_on wires
+  # the SLO to the infrastructure it leans on, so when the SLO breaches,
+  # mgtt walks downstream and asks each dependency what's wrong.
+
+  # The most-walked page on the storefront. Slow here = revenue lost on
+  # everything that follows.
   catalog_browse_slo:
     type: tracing.span_invariant
     providers: [tempo]
@@ -48,6 +63,8 @@ components:
       target_max: 2s
     depends_on: [php_fpm, opensearch, redis]
 
+  # The "is the customer committing?" signal. Sub-second target — slower
+  # than this and abandonment climbs sharply.
   add_to_cart_slo:
     type: tracing.span_invariant
     providers: [tempo]
@@ -57,6 +74,8 @@ components:
       target_max: 500ms
     depends_on: [php_fpm, rds, redis]
 
+  # The revenue gate. Breaches here are the ones to page on — every
+  # second of breach is conversion bleeding out.
   checkout_init_slo:
     type: tracing.span_invariant
     providers: [tempo]
@@ -66,6 +85,8 @@ components:
       target_max: 800ms
     depends_on: [php_fpm, rds, redis]
 
+  # Discovery latency. Slow search ≠ broken search, but a sustained breach
+  # often points at OpenSearch under-provisioned for the catalog size.
   search_query_slo:
     type: tracing.span_invariant
     providers: [tempo]
