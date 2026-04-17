@@ -1,6 +1,6 @@
 meta:
   name: tempo
-  version: 0.2.0
+  version: 0.2.1
   description: Per-span SLO checks against Grafana Tempo. Use for "p99 of <span> stays under <target>" invariants.
   tags: [tracing, otel, grafana, slo]
   requires:
