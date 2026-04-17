@@ -48,11 +48,3 @@ variables:
       blue/green color, or `span.http.target = "/checkout"` to a single route
     required: false
 
-auth:
-  strategy: environment
-  reads_from:
-    - tempo_url variable (model-side)
-    - auth_token variable (model-side; pass via secret)
-  access:
-    probes: tempo HTTP read
-    writes: none
