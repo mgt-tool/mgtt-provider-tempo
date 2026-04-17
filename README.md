@@ -26,9 +26,19 @@ Tempo's TraceQL Metrics response shape and TraceQL syntax both shifted between m
 
 ## Install
 
+Two equivalent paths — pick whichever fits your workflow:
+
 ```bash
+# Git + host toolchain (requires Go 1.25+)
 mgtt provider install tempo
+
+# Pre-built Docker image (no local toolchain, digest-pinned)
+mgtt provider install --image ghcr.io/mgt-tool/mgtt-provider-tempo:0.2.0@sha256:...
 ```
+
+The image is published by [this repo's CI](./.github/workflows/docker.yml) on every push to `main` and every `v*` tag. Find the current digest on the [GHCR package page](https://github.com/mgt-tool/mgtt-provider-tempo/pkgs/container/mgtt-provider-tempo).
+
+Runtime: `image.needs: [network]` in `provider.yaml` — mgtt runs the image with `--network host` so the container can reach the Tempo URL you set in `vars.tempo_url`. No credentials are forwarded; Tempo auth (if any) is passed via the `auth_token` and `tenant_id` vars per-component.
 
 ## Auth
 
