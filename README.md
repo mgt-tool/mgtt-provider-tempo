@@ -22,7 +22,7 @@ When `mgtt plan` walks this component, it asks Tempo: "what's the p99 of `checko
 | **Versions** | `2.6.x` |
 | **Tested against** | `grafana/tempo:2.6.0` (digest pinned in integration tests) |
 
-Tempo's TraceQL Metrics response shape and TraceQL syntax both shifted between minor versions — earlier (`<2.6`) and later (`>=2.7`) deployments will silently return zeros or 4xx the queries. See [`provider.yaml`](./provider.yaml#L19) for the full contract.
+Tempo's TraceQL Metrics response shape and TraceQL syntax both shifted between minor versions — earlier (`<2.6`) and later (`>=2.7`) deployments will silently return zeros or 4xx the queries. See [`manifest.yaml`](./manifest.yaml#L19) for the full contract.
 
 ## Install
 

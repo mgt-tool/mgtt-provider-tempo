@@ -1,0 +1,69 @@
+# A real Magento storefront, observed during the *moment* of a blue/green
+# deploy — when steady-state SLOs aren't the right contract because the
+# fleet is half-warm and half-going-away.
+#
+# Companion models:
+#   • magento-platform.model.yaml — steady-state SLOs (always loaded)
+#
+# The blue/green switch *is* the canary. After magento_svc flips its selector
+# to {color}, the just-promoted color must hold a tighter error budget than
+# steady-state — otherwise the deploy is bad and rollback is the right move.
+#
+# Two things make this scenario interesting that the steady-state example
+# (magento-platform.model.yaml) cannot show:
+#
+#   • span_filter scopes the SLO to one color, so the dying blue pods don't
+#     contaminate the green canary signal.
+#   • depends_on across providers — the SLO leans on a kubernetes.service
+#     component, so a stuck switch surfaces both at the kubernetes layer
+#     and at the latency layer when mgtt walks the graph.
+#
+# Latency budget here is *looser* than steady-state checkout (3s vs 800ms) —
+# a fresh fleet runs cold for a few minutes and that's expected. But the
+# error budget is *tighter* (0.5% vs 0.1%) and breach tolerance is *zero*:
+# any sustained breach in the canary window is a fail.
+#
+# Usage:
+#   export MGTT_MODEL=examples/magento-blue-green-canary.model.yaml
+#   mgtt plan --component post_switch_canary
+#
+# In production this model would be activated by your deploy pipeline
+# right after the selector flip; treat it as the "are we OK to keep going?"
+# gate before scaling the old color down.
+
+meta:
+  name: magento-blue-green-canary
+  version: "1.0"
+  providers:
+    - mgt-tool/kubernetes
+    - mgt-tool/tempo
+  vars:
+    namespace: magento
+    tempo_url: http://tempo.observability.svc:3200
+    color: green                           # the just-promoted color
+
+components:
+  # ── Infrastructure the canary depends on ───────────────────────────────
+  # The Service whose selector flip *is* the blue/green promotion. The
+  # canary depends on it so a stuck switch is visible from two angles.
+  magento_svc:
+    type: kubernetes.service
+    vars: {name: magento-svc, namespace: "{namespace}"}
+
+  # The newly-promoted pod fleet — what the canary is actually watching.
+  php_fpm_active:
+    type: kubernetes.deployment
+    vars: {name: "magento-php-fpm-{color}", namespace: "{namespace}"}
+
+  # ── The canary SLO ─────────────────────────────────────────────────────
+  post_switch_canary:
+    type: tracing.span_invariant
+    providers: [mgt-tool/tempo]
+    vars:
+      tempo_url: "{tempo_url}"
+      span: "http.server.request"
+      span_filter: 'resource.deployment.color = "{color}"'
+      target_max: 3s                       # cold-cache headroom
+      target_max_error_rate: 0.005         # 0.5% errors — tighter than steady-state
+      breach_tolerance_seconds: 0          # no sustained breach allowed
+    depends_on: [magento_svc, php_fpm_active]
