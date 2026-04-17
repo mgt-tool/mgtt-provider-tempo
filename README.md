@@ -40,11 +40,7 @@ The image is published by [this repo's CI](./.github/workflows/docker.yml) on ev
 
 ## Capabilities
 
-When installed as an image, this provider declares the following runtime capabilities in [`provider.yaml`](./provider.yaml) (top-level `needs:`):
-
-| Capability | Effect at probe time |
-|---|---|
-| `network` | `--network host` — container reaches the Tempo HTTP URL you configure via `vars.tempo_url` |
+This provider declares **no `needs:` entries** — it talks only HTTP to the Tempo URL you configure in `vars.tempo_url`. It does declare **`network: host`** so the container reaches in-cluster DNS (e.g. `tempo.observability.svc:3200`) that bridge-mode containers can't resolve.
 
 No host credentials are forwarded; Tempo auth (when applicable) is passed per-component via the `auth_token` and `tenant_id` model vars.
 
