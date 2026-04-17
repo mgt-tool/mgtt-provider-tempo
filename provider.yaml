@@ -7,6 +7,13 @@ meta:
     mgtt: ">=0.1.4"
   command: "$MGTT_PROVIDER_DIR/bin/mgtt-provider-tempo"
 
+# Capabilities the image-installed form of this provider needs mgtt to
+# forward at probe time. Surfaced here (at the top, before types and
+# vocabulary) so anyone reading this file sees the runtime scope first.
+# See mgtt docs/reference/image-capabilities.md for the full vocabulary.
+image:
+  needs: [network]
+
 # Backend version this provider is built against. Tempo's TraceQL Metrics
 # response shape and TraceQL syntax both shifted between minor versions —
 # the contract here is a hard binding, not best-effort.
@@ -50,8 +57,3 @@ auth:
   access:
     probes: tempo HTTP read
     writes: none
-
-# Capabilities the image-installed form of this provider needs mgtt to
-# forward at probe time. See mgtt docs/reference/image-capabilities.md.
-image:
-  needs: [network]
