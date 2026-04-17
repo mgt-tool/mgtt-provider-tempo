@@ -6,7 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ### Added
 
-- **`compatibility:` block in `provider.yaml`** — declares the backend versions this provider is built against (Tempo `2.6.x`), the exact image digests the integration tests run against, and the version-sensitive behaviors callers should know about (response shape and TraceQL syntax both shifted vs. 2.5). README surfaces the contract prominently near the top.
+- **`compatibility:` block in `manifest.yaml`** — declares the backend versions this provider is built against (Tempo `2.6.x`), the exact image digests the integration tests run against, and the version-sensitive behaviors callers should know about (response shape and TraceQL syntax both shifted vs. 2.5). README surfaces the contract prominently near the top.
 - **`span_filter` var on `tracing.span_invariant`** — appends a TraceQL attribute matcher to every query. Lets one component scope to one blue/green color, one route, one tenant, etc. Example: `span_filter: 'resource.deployment.color = "{color}"'`.
 - **`post_switch_canary` SLO** in the Magento example — uses `span_filter` to bind a tighter error budget to just the just-promoted color, depending on a `kubernetes.service` so a stuck switch surfaces both at the kubernetes layer and the latency layer.
 - **Per-component SLO targets** (`target_max_error_rate`, `breach_tolerance_seconds`) — type manifest's `healthy:` and `states:` reference these vars instead of hardcoded constants. Each component reads as a three-number contract.
