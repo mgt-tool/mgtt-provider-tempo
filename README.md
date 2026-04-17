@@ -38,7 +38,17 @@ mgtt provider install --image ghcr.io/mgt-tool/mgtt-provider-tempo:0.2.0@sha256:
 
 The image is published by [this repo's CI](./.github/workflows/docker.yml) on every push to `main` and every `v*` tag. Find the current digest on the [GHCR package page](https://github.com/mgt-tool/mgtt-provider-tempo/pkgs/container/mgtt-provider-tempo).
 
-Runtime: `image.needs: [network]` in `provider.yaml` — mgtt runs the image with `--network host` so the container can reach the Tempo URL you set in `vars.tempo_url`. No credentials are forwarded; Tempo auth (if any) is passed via the `auth_token` and `tenant_id` vars per-component.
+## Capabilities
+
+When installed as an image, this provider declares the following runtime capabilities in [`provider.yaml`](./provider.yaml) (`image.needs`):
+
+| Capability | Effect at probe time |
+|---|---|
+| `network` | `--network host` — container reaches the Tempo HTTP URL you configure via `vars.tempo_url` |
+
+No host credentials are forwarded; Tempo auth (when applicable) is passed per-component via the `auth_token` and `tenant_id` model vars.
+
+Operators can override or extend the vocabulary via `$MGTT_HOME/capabilities.yaml`, and refuse specific caps via `MGTT_IMAGE_CAPS_DENY=...`. See the [full capabilities reference](https://github.com/mgt-tool/mgtt/blob/main/docs/reference/image-capabilities.md). Git-installed invocations don't go through this layer — the binary runs with the operator's full environment.
 
 ## Auth
 
