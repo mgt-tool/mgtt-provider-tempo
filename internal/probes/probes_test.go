@@ -234,7 +234,7 @@ func TestRegistryWiresSpanInvariant(t *testing.T) {
 	for _, want := range []string{"current_p99", "current_p95", "current_p50",
 		"request_count_5m", "error_rate_5m", "breach_duration"} {
 		found := false
-		for _, f := range r.Facts("span_invariant") {
+		for _, f := range factNames(types()["span_invariant"]) {
 			if f == want {
 				found = true
 				break
@@ -244,4 +244,13 @@ func TestRegistryWiresSpanInvariant(t *testing.T) {
 			t.Errorf("registry missing span_invariant fact %q", want)
 		}
 	}
+}
+
+// factNames lists the facts a type registers, from the provider's own table.
+func factNames(facts map[string]provider.ProbeFn) []string {
+	out := make([]string, 0, len(facts))
+	for name := range facts {
+		out = append(out, name)
+	}
+	return out
 }
