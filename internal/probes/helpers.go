@@ -44,7 +44,18 @@ func newClient(req provider.Request) (*tempoclient.Client, error) {
 	return NewTempoConstructor(url, req.Extra["auth_token"], req.Extra["tenant_id"]), nil
 }
 
+// types is this provider's vocabulary as it registers it: type name to the
+// probe for each fact. The SDK registry does not list what it holds (mgtt
+// 0.3.0 removed Registry.Types and Facts), so tests read the table here.
+func types() map[string]map[string]provider.ProbeFn {
+	return map[string]map[string]provider.ProbeFn{
+		"span_invariant": spanInvariantFacts(),
+	}
+}
+
 // Register adds the tempo provider's types to the registry.
 func Register(r *provider.Registry) {
-	registerSpanInvariant(r)
+	for name, facts := range types() {
+		r.Register(name, facts)
+	}
 }

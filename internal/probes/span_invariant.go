@@ -19,8 +19,8 @@ import (
 
 const window5m = 5 * time.Minute
 
-func registerSpanInvariant(r *provider.Registry) {
-	r.Register("span_invariant", map[string]provider.ProbeFn{
+func spanInvariantFacts() map[string]provider.ProbeFn {
+	return map[string]provider.ProbeFn{
 		"current_p99": percentile(99),
 		"current_p95": percentile(95),
 		"current_p50": percentile(50),
@@ -83,7 +83,7 @@ func registerSpanInvariant(r *provider.Registry) {
 			}
 			return provider.IntResult(trailingBreachSeconds(res, target.Seconds()*1e9)), nil
 		},
-	})
+	}
 }
 
 // percentile returns a ProbeFn that runs `quantile_over_time(.<n>, duration)`

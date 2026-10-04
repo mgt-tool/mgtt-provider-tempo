@@ -39,13 +39,13 @@ import (
 
 // Provider-specific fixtures. Update these alongside manifest.yaml.
 const (
-	imgLocalTag    = "mgtt-provider-tempo-it:test"
-	providerName   = "tempo"
-	expectCaps     = "" // tempo declares no needs; its backend is HTTP(s) via vars.tempo_url
-	expectNetwork  = "host"
-	registryPort   = "15801" // per-provider to avoid conflicts with mgtt's own integ test
-	registryName   = "mgtt-provider-tempo-it-registry"
-	localPushTag   = "localhost:15801/mgtt-provider-tempo:it"
+	imgLocalTag   = "mgtt-provider-tempo-it:test"
+	providerName  = "tempo"
+	expectCaps    = "" // tempo declares no needs; its backend is HTTP(s) via vars.tempo_url
+	expectNetwork = "host"
+	registryPort  = "15801" // per-provider to avoid conflicts with mgtt's own integ test
+	registryName  = "mgtt-provider-tempo-it-registry"
+	localPushTag  = "localhost:15801/mgtt-provider-tempo:it"
 )
 
 func TestImageInstall_Capabilities(t *testing.T) {
