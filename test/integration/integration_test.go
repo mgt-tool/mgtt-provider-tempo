@@ -39,7 +39,7 @@ const (
 	// Pinned by digest. The `:2.6.0` tag has been re-rolled with breaking
 	// response-shape changes once already; the digest makes the test
 	// reproducible regardless of upstream tag rollovers.
-	tempoImage = "grafana/tempo:2.6.0@sha256:f55a8a1937fff0af3a760d376b476c8327fb30e432d5e7630d7938b67691e822"
+	tempoImage    = "grafana/tempo:2.6.0@sha256:f55a8a1937fff0af3a760d376b476c8327fb30e432d5e7630d7938b67691e822"
 	tempoHTTPPort = "3200"
 	tempoOTLPPort = "4318"
 )
