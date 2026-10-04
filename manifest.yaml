@@ -27,6 +27,10 @@ install:
   image:
     repository: ghcr.io/mgt-tool/mgtt-provider-tempo
 
+# Thresholds the type expressions compare facts against
+# (`success_rate_5m >= target_success_rate`), set per component under vars:.
+# Declaring them is what lets `mgtt provider validate` tell them from
+# undeclared facts, and `mgtt model validate` warn when one is unset.
 variables:
   tempo_url:
     description: base URL of the Tempo HTTP API (e.g. https://tempo.observability.svc:3200)
@@ -43,3 +47,12 @@ variables:
       `resource.deployment.color = "green"` to scope an SLO to one
       blue/green color, or `span.http.target = "/checkout"` to a single route
     required: false
+  target_max:
+    description: the span's p99 latency bound (e.g. 800ms); breach_duration counts time above it
+    required: true
+  target_max_error_rate:
+    description: span_invariant degrades at error_rate_5m >= this (e.g. 0.01); set per component
+    required: true
+  breach_tolerance_seconds:
+    description: span_invariant is breached once p99 stays over target_max longer than this; set per component
+    required: true
